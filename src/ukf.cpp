@@ -73,6 +73,9 @@ UKF::UKF() {
     //create sigma point matrix
     Xsig_aug_ = MatrixXd(n_aug_, 2 * n_aug_ + 1);
     
+    //create matrix with predicted sigma points as columns
+    Xsig_pred_ = MatrixXd(n_x_, 2 * n_aug_ + 1);
+    
     //set measurement dimension, radar can measure r, phi, and r_dot
     n_z_ = 3;
     
@@ -112,8 +115,8 @@ void UKF::ProcessMeasurement(MeasurementPackage measurement_pack) {
          */
         
         //init P
-        this->P_ = MatrixXd(5, 5);
-        this->P_ << 1, 0, 0, 0,0,
+        P_ = MatrixXd(5, 5);
+        P_ << 1, 0, 0, 0,0,
         0, 1, 0, 0,0,
         0, 0, 1000, 0,0,
         0, 0, 0, 1000,0,
@@ -121,7 +124,7 @@ void UKF::ProcessMeasurement(MeasurementPackage measurement_pack) {
         
         // first measurement
         cout << "UKF: " << endl;
-        this->x_ << 1, 1, 1, 1, 1;
+        x_ << 1, 1, 1, 1, 1;
         VectorXd m = measurement_pack.raw_measurements_;
         
         if (measurement_pack.sensor_type_ == MeasurementPackage::RADAR) {
@@ -135,16 +138,16 @@ void UKF::ProcessMeasurement(MeasurementPackage measurement_pack) {
             float y=r*sin(phi);
             float vx = r_dot * cos(phi);
             float vy = r_dot * sin(phi);
-            this->x_ << x, y, vx, vy;
+            x_ << x, y, vx, vy, 0;
         }
         else if (measurement_pack.sensor_type_ == MeasurementPackage::LASER) {
             /**
              Initialize state.
              */
-            this->x_ << m[0], m[1], 0, 0;
+            x_ << m[0], m[1], 0, 0, 0;
         }
         
-        cout << "init x_ = " << this->x_ << endl;
+        cout << "init x_ = " << x_ << endl;
         
         // done initializing, no need to predict or update
         is_initialized_ = true;
@@ -305,85 +308,29 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
   You'll also need to calculate the lidar NIS.
   */
     
-    //at begin of ekf lesson
+    //copied from lecture notes, lesson 5.13
+    MatrixXd H_ = MatrixXd(2, 5);
+    H_ << 1, 0, 0, 0, 0,
+    0, 1, 0, 0, 0;
     
+    VectorXd z_pred = H_ * x_;
+    VectorXd y = meas_package.raw_measurements_ - z_pred;
+    MatrixXd Ht = H_.transpose();
     
-    //extract measurement as VectorXd
-    VectorXd z = meas_package.raw_measurements_;
+    MatrixXd R_ = MatrixXd(2, 2);
+    R_ << 0.0225, 0,
+    0, 0.0225;
     
-    //set measurement dimension, lidar can measure p_x and p_y
-    int n_z = 2;
+    MatrixXd S = H_ * P_ * Ht + R_;
+    MatrixXd Si = S.inverse();
+    MatrixXd PHt = P_ * Ht;
+    MatrixXd K = PHt * Si;
     
-    //create matrix for sigma points in measurement space
-    MatrixXd Zsig = MatrixXd(n_z, 2 * n_aug_ + 1);
-    
-    //transform sigma points into measurement space
-    for (int i = 0; i < 2 * n_aug_ + 1; i++) {  //2n+1 simga points
-        
-        // extract values for better readibility
-        double p_x = Xsig_pred_(0, i);
-        double p_y = Xsig_pred_(1, i);
-        
-        // measurement model
-        Zsig(0, i) = p_x;
-        Zsig(1, i) = p_y;
-    }
-    
-    //mean predicted measurement
-    VectorXd z_pred = VectorXd(n_z);
-    z_pred.fill(0.0);
-    for (int i = 0; i < 2 * n_aug_ + 1; i++) {
-        z_pred = z_pred + weights_(i) * Zsig.col(i);
-    }
-    
-    //measurement covariance matrix S
-    MatrixXd S = MatrixXd(n_z, n_z);
-    S.fill(0.0);
-    for (int i = 0; i < 2 * n_aug_ + 1; i++) {  //2n+1 simga points
-        
-        //residual
-        VectorXd z_diff = Zsig.col(i) - z_pred;
-        
-        S = S + weights_(i) * z_diff * z_diff.transpose();
-    }
-    
-    //add measurement noise covariance matrix
-    MatrixXd R = MatrixXd(n_z, n_z);
-    R << std_laspx_*std_laspx_, 0,
-    0, std_laspy_*std_laspy_;
-    S = S + R;
-    
-    //create matrix for cross correlation Tc
-    MatrixXd Tc = MatrixXd(n_x_, n_z);
-    
-    /*****************************************************************************
-     *  UKF Update for Lidar
-     ****************************************************************************/
-    //calculate cross correlation matrix
-    Tc.fill(0.0);
-    for (int i = 0; i < 2 * n_aug_ + 1; i++) {  //2n+1 simga points
-        
-        //residual
-        VectorXd z_diff = Zsig.col(i) - z_pred;
-        
-        // state difference
-        VectorXd x_diff = Xsig_pred_.col(i) - x_;
-        
-        Tc = Tc + weights_(i) * x_diff * z_diff.transpose();
-    }
-    
-    //Kalman gain K;
-    MatrixXd K = Tc * S.inverse();
-    
-    //residual
-    VectorXd z_diff = z - z_pred;
-    
-    //calculate NIS
-    lidar_NIS_ = z_diff.transpose() * S.inverse() * z_diff;
-    
-    //update state mean and covariance matrix
-    x_ = x_ + K * z_diff;
-    P_ = P_ - K*S*K.transpose();
+    //new estimate
+    x_ = x_ + (K * y);
+    long x_size = x_.size();
+    MatrixXd I = MatrixXd::Identity(x_size, x_size);
+    P_ = (I - K * H_) * P_;
 }
 
 /**
