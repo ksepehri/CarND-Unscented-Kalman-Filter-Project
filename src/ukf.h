@@ -66,6 +66,30 @@ public:
 
   ///* Sigma point spreading parameter
   double lambda_;
+    
+    // previous timestamp
+    long long previous_timestamp_;
+    
+    //create augmented mean vector
+    VectorXd x_aug_;
+    
+    //create augmented state covariance
+    MatrixXd P_aug_;
+    
+    //create sigma point matrix
+    MatrixXd Xsig_aug_;
+    
+    //set measurement dimension, radar can measure r, phi, and r_dot
+    int n_z_;
+    
+    //create matrix for sigma points in measurement space
+    MatrixXd Zsig_;
+    
+    //create matrix for cross correlation Tc
+    MatrixXd Tc;
+    
+    double radar_NIS_;
+    double lidar_NIS_;
 
 
   /**
@@ -102,6 +126,8 @@ public:
    * @param meas_package The measurement at k+1
    */
   void UpdateRadar(MeasurementPackage meas_package);
+    
+    double Normalize(double val);
 };
 
 #endif /* UKF_H */
