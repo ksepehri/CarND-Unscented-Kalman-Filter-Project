@@ -127,7 +127,7 @@ public:
    */
   void UpdateRadar(MeasurementPackage meas_package);
     
-    double Normalize(double val);
+    void Normalize(double *val);
 };
 
 #endif /* UKF_H */
